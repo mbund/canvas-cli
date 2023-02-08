@@ -1,0 +1,14 @@
+query QueryAssignments {
+  allCourses {
+    _id
+    name
+    assignmentsConnection {
+      nodes {
+        _id
+        name
+        state
+        dueAt
+      }
+    }
+  }
+}

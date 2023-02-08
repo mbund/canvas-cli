@@ -13,7 +13,7 @@
   }:
     utils.lib.eachDefaultSystem (
       system: let
-        name = "red";
+        name = "canvas-cli";
         pkgs = import nixpkgs {
           inherit system;
         };
@@ -45,6 +45,9 @@
               rustfmt
               rust-analyzer
               alejandra
+              pkg-config
+              openssl
+              graphql-client
             ]
             ++ deps;
         };
