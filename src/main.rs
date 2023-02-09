@@ -9,24 +9,17 @@ pub type DateTime = chrono::DateTime<chrono::Utc>;
 #[derive(GraphQLQuery)]
 #[graphql(
     schema_path = "generated/schema.json",
-    query_path = "src/query_assignments.graphql"
+    query_path = "src/query_assignments.graphql",
+    response_derives = "Debug"
 )]
 pub struct QueryAssignments;
 
-// async fn perform_my_query(variables: query_assignments::Variables) -> Result<(), Box<dyn Error>> {
-//     // this is the important line
-//     let request_body = QueryAssignments::build_query(variables);
-
-//     let client = reqwest::Client::new();
-//     let mut res = client
-//         .post("/api/graphql")
-//         .json(&request_body)
-//         .send()
-//         .await?;
-//     let response_body: Response<query_assignments::ResponseData> = res.json().await?;
-//     println!("{:#?}", response_body);
-//     Ok(())
-// }
+#[derive(Debug)]
+struct Assignment {
+    name: String,
+    id: String,
+    due_at: Option<DateTime>,
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Config {
@@ -91,11 +84,8 @@ enum Action {
     },
 }
 
-fn main() {
-    let mut cfg: Config = match confy::load("canvas-cli", "config") {
-        Ok(cfg) => cfg,
-        Err(error) => panic!("Problem loading config file: {:?}", error),
-    };
+fn main() -> Result<(), anyhow::Error> {
+    let mut cfg: Config = confy::load("canvas-cli", "config")?;
 
     let args = Args::parse();
     match args.action {
@@ -104,30 +94,71 @@ fn main() {
             cfg.url = url;
             cfg.access_token = access_token;
 
-            match confy::store("canvas-cli", "config", &cfg) {
-                Ok(cfg) => cfg,
-                Err(error) => panic!("Problem writing config file: {:?}", error),
-            };
+            confy::store("canvas-cli", "config", &cfg)?;
         }
         Action::Submit {
             assignment_name,
             files,
         } => {
+            let client = reqwest::blocking::Client::builder()
+                .default_headers(
+                    std::iter::once((
+                        reqwest::header::AUTHORIZATION,
+                        reqwest::header::HeaderValue::from_str(&format!(
+                            "Bearer {}",
+                            cfg.access_token
+                        ))
+                        .unwrap(),
+                    ))
+                    .collect(),
+                )
+                .build()?;
+
             // find assignment
+            let queried_assignments =
+                graphql_client::reqwest::post_graphql_blocking::<QueryAssignments, _>(
+                    &client,
+                    cfg.url + "/api/graphql",
+                    query_assignments::Variables {},
+                )
+                .unwrap();
+
+            println!("{:#?}", queried_assignments);
+
+            let assignments: Vec<Assignment> = queried_assignments
+                .data
+                .unwrap()
+                .all_courses
+                .into_iter()
+                .flat_map(|x| {
+                    x.into_iter().flat_map(|y| {
+                        y.assignments_connection
+                            .unwrap()
+                            .nodes
+                            .unwrap()
+                            .into_iter()
+                            .map(|z| {
+                                let w = z.unwrap();
+                                Assignment {
+                                    name: w.name.unwrap(),
+                                    id: w.id,
+                                    due_at: w.due_at.clone(),
+                                }
+                            })
+                    })
+                })
+                .collect();
+
+            println!("{:#?}", assignments);
 
             // verify files exist
             for file in files {
-                match std::fs::metadata(&file) {
-                    Ok(_metadata) => {}
-                    Err(error) => {
-                        panic!("Problem fetching file metadata on {:?}: {:?}", file, error)
-                    }
-                };
+                std::fs::metadata(&file)?;
             }
 
             // submit files
         }
     }
 
-    // Ok(())
+    Ok(())
 }
