@@ -43,17 +43,17 @@ pub struct SubmitCommand {
 }
 
 impl SubmitCommand {
-    pub fn action(&self, cfg: &Config) -> Result<(), anyhow::Error> {
-        let client = reqwest::blocking::Client::builder()
-            .default_headers(
-                std::iter::once((
-                    reqwest::header::AUTHORIZATION,
-                    reqwest::header::HeaderValue::from_str(&format!("Bearer {}", cfg.access_token))
-                        .unwrap(),
-                ))
-                .collect(),
-            )
-            .build()?;
+    pub async fn action(&self, cfg: &Config) -> Result<(), anyhow::Error> {
+        // let client = reqwest::Client::builder()
+        //     .default_headers(
+        //         std::iter::once((
+        //             reqwest::header::AUTHORIZATION,
+        //             reqwest::header::HeaderValue::from_str(&format!("Bearer {}", cfg.access_token))
+        //                 .unwrap(),
+        //         ))
+        //         .collect(),
+        //     )
+        //     .build()?;
 
         // find assignment
 
@@ -64,24 +64,54 @@ impl SubmitCommand {
         //     std::thread::sleep(std::time::Duration::from_millis(100));
         // }
 
-        graphql_client::reqwest::post_graphql(, url, variables)
+        // let spinner_task = tokio::task::spawn(async move {
+        //     loop {
+        //         spinner.inc(1);
+        //         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        //     }
+        // });
 
-        let queried_assignments =
-            graphql_client::reqwest::post_graphql_blocking::<QueryAssignments, _>(
+        let url = cfg.url.to_owned();
+        let access_token = cfg.access_token.to_owned();
+        let task = tokio::task::spawn(async move {
+            let client = reqwest::Client::builder()
+                .default_headers(
+                    std::iter::once((
+                        reqwest::header::AUTHORIZATION,
+                        reqwest::header::HeaderValue::from_str(&format!("Bearer {}", access_token))
+                            .unwrap(),
+                    ))
+                    .collect(),
+                )
+                .build()
+                .unwrap();
+
+            graphql_client::reqwest::post_graphql::<QueryAssignments, _>(
                 &client,
-                cfg.url.to_owned() + "api/graphql",
+                url + "api/graphql",
                 query_assignments::Variables {},
             )
-            .unwrap();
+            .await
+            .unwrap()
+            .data
+            .unwrap()
+        });
+
+        loop {
+            spinner.inc(1);
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            if task.is_finished() {
+                break;
+            }
+        }
+
+        let queried_assignments = task.await?;
 
         spinner.set_style(ProgressStyle::with_template("✓ {wide_msg}").unwrap());
         spinner.finish_with_message("Queried assignment information");
 
         // translate graphql response into one long list of assignments
         let mut assignments: Vec<Assignment> = queried_assignments
-            .data
-            .as_ref()
-            .unwrap()
             .all_courses
             .iter()
             .flat_map(|all_courses| {
@@ -146,14 +176,12 @@ impl SubmitCommand {
             .collect();
 
         // get course names
-        let courses: Vec<String> = queried_assignments
-            .data
-            .as_ref()
-            .unwrap()
+        let mut courses: Vec<String> = queried_assignments
             .all_courses
             .iter()
             .flat_map(|all_courses| all_courses.iter().map(|course| course.name.to_owned()))
             .collect();
+        courses.sort_by(|a, b| a.cmp(b));
 
         // prompt user to select course from list
         let course = Select::new("Course?", courses).prompt()?;

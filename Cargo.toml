@@ -15,4 +15,5 @@ inquire = "0.5.3"
 reqwest = "0.11.14"
 serde = "1.0.152"
 serde_derive = "1.0.152"
+tokio = {version = "1.25.0", features = ["full"] }
 url = "2.3.1"

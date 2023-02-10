@@ -33,13 +33,14 @@ enum Action {
     Submit(submit::SubmitCommand),
 }
 
-fn main() -> Result<(), anyhow::Error> {
+#[tokio::main]
+async fn main() -> Result<(), anyhow::Error> {
     let mut cfg: Config = confy::load("canvas-cli", "config")?;
 
     let args = Args::parse();
 
     match args.action {
         Action::Auth(command) => command.action(&mut cfg),
-        Action::Submit(command) => command.action(&cfg),
+        Action::Submit(command) => command.action(&cfg).await,
     }
 }
