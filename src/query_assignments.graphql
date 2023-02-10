@@ -8,6 +8,12 @@ query QueryAssignments {
         name
         state
         dueAt
+        submissionTypes
+        submissionsConnection {
+          nodes {
+            submissionStatus
+          }
+        }
       }
     }
   }
