@@ -49,6 +49,8 @@
               rust-analyzer
               alejandra
               graphql-client
+
+              vhs
             ]
             ++ deps;
         };
