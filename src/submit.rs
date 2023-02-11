@@ -1,10 +1,17 @@
 #![allow(dead_code)]
 
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Display,
+};
+
 use crate::{submit::query_assignments::SubmissionType, Config};
+use colored::Colorize;
 use fuzzy_matcher::FuzzyMatcher;
 use graphql_client::GraphQLQuery;
 use indicatif::ProgressStyle;
 use inquire::*;
+use serde::Deserialize;
 
 pub type DateTime = chrono::DateTime<chrono::Utc>;
 
@@ -16,10 +23,27 @@ pub type DateTime = chrono::DateTime<chrono::Utc>;
 )]
 pub struct QueryAssignments;
 
-#[derive(Debug)]
+#[derive(Debug, Hash, Clone, PartialEq, Eq)]
 struct Course {
     name: String,
     id: String,
+    favorite: bool,
+    css_color: String,
+}
+
+impl Display for Course {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let color = csscolorparser::parse(&self.css_color)
+            .unwrap()
+            .to_linear_rgba_u8();
+        write!(
+            f,
+            "{}{}{}",
+            "█ ".truecolor(color.0, color.1, color.2),
+            self.name,
+            if self.favorite { " ★" } else { "" }.yellow()
+        )
+    }
 }
 
 #[derive(Debug)]
@@ -32,6 +56,12 @@ struct Assignment {
     submission_type: SubmissionType,
 }
 
+impl Display for Assignment {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}{}", self.name, if self.submitted { " ✓" } else { "" })
+    }
+}
+
 #[derive(clap::Parser, Debug)]
 /// Submit Canvas assignment
 pub struct SubmitCommand {
@@ -42,70 +72,66 @@ pub struct SubmitCommand {
     files: Vec<String>,
 }
 
+#[derive(Deserialize, Debug)]
+struct FavoritesResponse {
+    id: u32,
+    name: String,
+}
+
+#[derive(Deserialize, Debug)]
+struct ColorsResponse {
+    custom_colors: HashMap<String, String>,
+}
+
 impl SubmitCommand {
     pub async fn action(&self, cfg: &Config) -> Result<(), anyhow::Error> {
-        // let client = reqwest::Client::builder()
-        //     .default_headers(
-        //         std::iter::once((
-        //             reqwest::header::AUTHORIZATION,
-        //             reqwest::header::HeaderValue::from_str(&format!("Bearer {}", cfg.access_token))
-        //                 .unwrap(),
-        //         ))
-        //         .collect(),
-        //     )
-        //     .build()?;
-
-        // find assignment
-
         let spinner = indicatif::ProgressBar::new_spinner();
         spinner.set_message("Querying assignment information");
-        // for _ in 0..40 {
-        //     spinner.inc(1);
-        //     std::thread::sleep(std::time::Duration::from_millis(100));
-        // }
-
-        // let spinner_task = tokio::task::spawn(async move {
-        //     loop {
-        //         spinner.inc(1);
-        //         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        //     }
-        // });
 
         let url = cfg.url.to_owned();
         let access_token = cfg.access_token.to_owned();
-        let task = tokio::task::spawn(async move {
-            let client = reqwest::Client::builder()
-                .default_headers(
-                    std::iter::once((
-                        reqwest::header::AUTHORIZATION,
-                        reqwest::header::HeaderValue::from_str(&format!("Bearer {}", access_token))
-                            .unwrap(),
-                    ))
-                    .collect(),
-                )
-                .build()
-                .unwrap();
 
-            graphql_client::reqwest::post_graphql::<QueryAssignments, _>(
-                &client,
-                url + "api/graphql",
-                query_assignments::Variables {},
+        let client = reqwest::Client::builder()
+            .default_headers(
+                std::iter::once((
+                    reqwest::header::AUTHORIZATION,
+                    reqwest::header::HeaderValue::from_str(&format!("Bearer {}", access_token))
+                        .unwrap(),
+                ))
+                .collect(),
             )
-            .await
-            .unwrap()
-            .data
-            .unwrap()
+            .build()
+            .unwrap();
+
+        let graphql_assignment_request = graphql_client::reqwest::post_graphql::<QueryAssignments, _>(
+            &client,
+            format!("{}api/graphql", url),
+            query_assignments::Variables {},
+        );
+
+        let spinner_clone = spinner.clone();
+        let spinner_task = tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                spinner_clone.inc(1);
+            }
         });
 
-        loop {
-            spinner.inc(1);
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-            if task.is_finished() {
-                break;
-            }
-        }
+        let favorites_request = client
+            .get(format!("{}api/v1/users/self/favorites/courses", url))
+            .send();
 
-        let queried_assignments = task.await?;
+        let colors_request = client
+            .get(format!("{}api/v1/users/self/colors", url))
+            .send();
+
+        let colors = colors_request.await?.json::<ColorsResponse>().await?;
+        let favorites = favorites_request
+            .await?
+            .json::<Vec<FavoritesResponse>>()
+            .await?;
+        let queried_assignments = graphql_assignment_request.await?.data.unwrap();
+        spinner_task.abort();
 
         spinner.set_style(ProgressStyle::with_template("✓ {wide_msg}").unwrap());
         spinner.finish_with_message("Queried assignment information");
@@ -168,6 +194,14 @@ impl SubmitCommand {
                                 course: Course {
                                     name: course.name.to_owned(),
                                     id: course.id.to_owned(),
+                                    favorite: favorites.iter().any(|favorite| {
+                                        favorite.id == course.id.parse::<u32>().unwrap()
+                                    }),
+                                    css_color: colors
+                                        .custom_colors
+                                        .get(course.asset_string.as_ref().unwrap())
+                                        .unwrap()
+                                        .to_string(),
                                 },
                             }
                         })
@@ -175,52 +209,26 @@ impl SubmitCommand {
             })
             .collect();
 
-        // get course names
-        let mut courses: Vec<String> = queried_assignments
-            .all_courses
+        // get courses
+        let mut courses: Vec<Course> = assignments
             .iter()
-            .flat_map(|all_courses| all_courses.iter().map(|course| course.name.to_owned()))
+            .map(|assignment| assignment.course.clone())
+            .collect::<HashSet<_>>()
+            .into_iter()
             .collect();
-        courses.sort_by(|a, b| a.cmp(b));
 
-        // prompt user to select course from list
+        courses.sort_by(|a, b| b.favorite.cmp(&a.favorite).then(a.name.cmp(&b.name)));
         let course = Select::new("Course?", courses).prompt()?;
 
-        // filter assignments to a nice list
+        // get assignment
         assignments.retain(|assignment| match assignment.submission_type {
             SubmissionType::online_upload => true,
             _ => false, // TODO: support more upload types
         });
-        assignments.retain(|assignment| assignment.course.name == course);
-        assignments.sort_by(|a, b| {
-            let submit_order = a.submitted.cmp(&b.submitted);
-            if submit_order == std::cmp::Ordering::Equal {
-                if a.due_at.is_none() {
-                    return std::cmp::Ordering::Greater;
-                } else if b.due_at.is_none() {
-                    return std::cmp::Ordering::Less;
-                } else {
-                    return a.due_at.unwrap().cmp(&b.due_at.unwrap());
-                }
-            } else {
-                return submit_order;
-            }
-        });
-
-        // use the assignments to make a list to prompt the user with
-        let options: Vec<String> = assignments
-            .into_iter()
-            .map(|assignment| {
-                format!(
-                    "{} {}",
-                    assignment.name,
-                    if assignment.submitted { "✓" } else { " " },
-                )
-            })
-            .collect();
-
+        assignments.retain(|assignment| assignment.course == course);
+        assignments.sort_by(|a, b| a.submitted.cmp(&b.submitted).then(a.due_at.cmp(&b.due_at)));
         let matcher = fuzzy_matcher::skim::SkimMatcherV2::default();
-        let _assignment = Select::new("Assignment?", options)
+        let _assignment = Select::new("Assignment?", assignments)
             .with_filter(&|input, _, string_value, _| {
                 matcher.fuzzy_match(string_value, input).is_some()
             })

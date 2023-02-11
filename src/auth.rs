@@ -1,4 +1,6 @@
+use indicatif::ProgressStyle;
 use inquire::{Password, PasswordDisplayMode, Text};
+use serde::Deserialize;
 
 use crate::Config;
 
@@ -31,14 +33,18 @@ pub struct AuthCommand {
     access_token: Option<String>,
 }
 
+#[derive(Deserialize, Debug)]
+struct SelfResponse {
+    name: String,
+    pronouns: String,
+}
+
 impl AuthCommand {
-    pub fn action(self, cfg: &mut Config) -> Result<(), anyhow::Error> {
+    pub async fn action(self, cfg: &mut Config) -> Result<(), anyhow::Error> {
         let url = match self.url {
             Some(url) => Ok(url),
             None => Text::new("Canvas Instance URL:").prompt(),
         }?;
-
-        println!("Authenticating on {}", url);
 
         let access_token = match self.access_token {
             Some(access_token) => Ok(access_token),
@@ -48,8 +54,46 @@ impl AuthCommand {
                 .prompt(),
         }?;
 
+        let client = reqwest::Client::builder()
+            .default_headers(
+                std::iter::once((
+                    reqwest::header::AUTHORIZATION,
+                    reqwest::header::HeaderValue::from_str(&format!("Bearer {}", access_token))
+                        .unwrap(),
+                ))
+                .collect(),
+            )
+            .build()
+            .unwrap();
+
+        let spinner = indicatif::ProgressBar::new_spinner();
+        spinner.set_message("Test query with authentication");
+
+        let spinner_clone = spinner.clone();
+        let spinner_task = tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                spinner_clone.inc(1);
+            }
+        });
+
+        let self_query = client
+            .get(format!("{}api/v1/users/self", url))
+            .send()
+            .await?
+            .json::<SelfResponse>()
+            .await?;
+        spinner_task.abort();
+
+        spinner.set_style(ProgressStyle::with_template("✓ {wide_msg}").unwrap());
+        spinner.finish_with_message("Test query successful");
+        println!("Authenticated as: ");
+        println!("  {} ({})", self_query.name, self_query.pronouns);
+
         cfg.url = url;
         cfg.access_token = access_token;
+
+        // REST /api/v1/users/self
 
         confy::store("canvas-cli", "config", cfg)?;
 

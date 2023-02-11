@@ -35,12 +35,13 @@ enum Action {
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
+    env_logger::init();
     let mut cfg: Config = confy::load("canvas-cli", "config")?;
 
     let args = Args::parse();
 
     match args.action {
-        Action::Auth(command) => command.action(&mut cfg),
+        Action::Auth(command) => command.action(&mut cfg).await,
         Action::Submit(command) => command.action(&cfg).await,
     }
 }
