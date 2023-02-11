@@ -11,14 +11,13 @@ use anyhow::anyhow;
 use colored::Colorize;
 use fuzzy_matcher::FuzzyMatcher;
 use graphql_client::GraphQLQuery;
-use indicatif::ProgressStyle;
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use inquire::*;
 use reqwest::{
     multipart::{Form, Part},
     Body, Client,
 };
 use serde::Deserialize;
-use tokio::fs::File;
 use tokio_util::codec::{BytesCodec, FramedRead};
 
 pub type DateTime = chrono::DateTime<chrono::Utc>;
@@ -106,6 +105,10 @@ struct UploadResponse {
 impl SubmitCommand {
     pub async fn action(&self, cfg: &Config) -> Result<(), anyhow::Error> {
         // verify all files exist first before doing anything which needs a network connections
+        if self.files.len() == 0 {
+            Err(anyhow!("Must submit at least one file"))?;
+        }
+
         for file in self.files.iter() {
             match std::fs::metadata(&file) {
                 Ok(_) => Ok(()),
@@ -274,9 +277,47 @@ impl SubmitCommand {
             .prompt()?;
 
         // upload files
-        for filepath in self.files.iter() {
-            upload_file(&url, &course, &assignment, &client, &filepath).await?;
-        }
+        let multi_progress = MultiProgress::new();
+        let futures = self.files.iter().map(|filepath| {
+            upload_file(
+                &url,
+                &course,
+                &assignment,
+                &client,
+                &filepath,
+                &multi_progress,
+            )
+        });
+
+        let uploaded_files = futures::future::join_all(futures).await;
+        let mut params: Vec<(String, String)> = uploaded_files
+            .into_iter()
+            .map(|f| {
+                (
+                    "submission[file_ids][]".to_string(),
+                    f.unwrap().id.to_string(),
+                )
+            })
+            .collect();
+        params.push((
+            "submission[submission_type]".to_string(),
+            "online_upload".to_string(),
+        ));
+        let submit_reponse = client
+            .post(format!(
+                "{}api/v1/courses/{}/assignments/{}/submissions",
+                url, course.id, assignment.id
+            ))
+            .query(&params)
+            .send()
+            .await?;
+
+        submit_reponse.error_for_status()?;
+
+        println!(
+            "✓ Submitted file{} to assignment",
+            if self.files.len() > 1 { "s" } else { "" }
+        );
 
         Ok(())
     }
@@ -288,13 +329,14 @@ async fn upload_file(
     assignment: &Assignment,
     client: &Client,
     filepath: &str,
+    multi_progress: &MultiProgress,
 ) -> Result<UploadResponse, anyhow::Error> {
     let metadata = std::fs::metadata(filepath).unwrap();
     let path = std::path::Path::new(filepath);
     let file = tokio::fs::File::open(path).await.unwrap();
     let basename = path.file_name().unwrap().to_str().unwrap();
 
-    let spinner = indicatif::ProgressBar::new_spinner();
+    let spinner = multi_progress.add(ProgressBar::new_spinner());
     spinner.set_message(format!("Uploading file {} as {}", filepath, basename));
 
     let spinner_clone = spinner.clone();
@@ -370,10 +412,4 @@ async fn upload_file(
     }
 
     Ok(upload_response)
-}
-
-fn file_to_body(file: File) -> Body {
-    let stream = FramedRead::new(file, BytesCodec::new());
-    let body = Body::wrap_stream(stream);
-    body
 }
