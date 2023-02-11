@@ -18,7 +18,10 @@
           inherit system;
         };
         naersk-lib = naersk.lib."${system}";
-        deps = with pkgs; [];
+        deps = with pkgs; [
+          pkg-config
+          openssl
+        ];
       in rec {
         packages.${name} = naersk-lib.buildPackage {
           pname = "${name}";
@@ -45,8 +48,6 @@
               rustfmt
               rust-analyzer
               alejandra
-              pkg-config
-              openssl
               graphql-client
             ]
             ++ deps;
