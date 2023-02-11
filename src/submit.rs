@@ -3,15 +3,23 @@
 use std::{
     collections::{HashMap, HashSet},
     fmt::Display,
+    hash::Hash,
 };
 
 use crate::{submit::query_assignments::SubmissionType, Config};
+use anyhow::anyhow;
 use colored::Colorize;
 use fuzzy_matcher::FuzzyMatcher;
 use graphql_client::GraphQLQuery;
 use indicatif::ProgressStyle;
 use inquire::*;
+use reqwest::{
+    multipart::{Form, Part},
+    Body, Client,
+};
 use serde::Deserialize;
+use tokio::fs::File;
+use tokio_util::codec::{BytesCodec, FramedRead};
 
 pub type DateTime = chrono::DateTime<chrono::Utc>;
 
@@ -65,9 +73,6 @@ impl Display for Assignment {
 #[derive(clap::Parser, Debug)]
 /// Submit Canvas assignment
 pub struct SubmitCommand {
-    /// Name of assignment to submit to
-    assignment_name: String,
-
     /// File(s)
     files: Vec<String>,
 }
@@ -83,10 +88,46 @@ struct ColorsResponse {
     custom_colors: HashMap<String, String>,
 }
 
+#[derive(Deserialize, Debug)]
+struct UploadBucket {
+    upload_url: String,
+    upload_params: HashMap<String, String>,
+}
+
+#[derive(Deserialize, Debug)]
+struct UploadResponse {
+    id: u32,
+    url: String,
+    content_type: Option<String>,
+    display_name: Option<String>,
+    size: Option<u32>,
+}
+
 impl SubmitCommand {
     pub async fn action(&self, cfg: &Config) -> Result<(), anyhow::Error> {
+        // verify all files exist first before doing anything which needs a network connections
+        for file in self.files.iter() {
+            match std::fs::metadata(&file) {
+                Ok(_) => Ok(()),
+                Err(error) => Err(anyhow!("{}: {}", error, file)),
+            }?;
+
+            log::info!("Verified file exists: {}", file);
+        }
+
+        log::info!("Verified all files exist");
+        println!("✓ Verified all files exist");
+
         let spinner = indicatif::ProgressBar::new_spinner();
         spinner.set_message("Querying assignment information");
+
+        let spinner_clone = spinner.clone();
+        let spinner_task = tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                spinner_clone.inc(1);
+            }
+        });
 
         let url = cfg.url.to_owned();
         let access_token = cfg.access_token.to_owned();
@@ -109,14 +150,6 @@ impl SubmitCommand {
             query_assignments::Variables {},
         );
 
-        let spinner_clone = spinner.clone();
-        let spinner_task = tokio::spawn(async move {
-            loop {
-                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                spinner_clone.inc(1);
-            }
-        });
-
         let favorites_request = client
             .get(format!("{}api/v1/users/self/favorites/courses", url))
             .send();
@@ -126,11 +159,17 @@ impl SubmitCommand {
             .send();
 
         let colors = colors_request.await?.json::<ColorsResponse>().await?;
+        log::info!("Made REST request to get course colors");
+
         let favorites = favorites_request
             .await?
             .json::<Vec<FavoritesResponse>>()
             .await?;
+        log::info!("Made REST request to get favorite courses");
+
         let queried_assignments = graphql_assignment_request.await?.data.unwrap();
+        log::info!("Made GraphQL request to get all courses and assignments");
+
         spinner_task.abort();
 
         spinner.set_style(ProgressStyle::with_template("✓ {wide_msg}").unwrap());
@@ -228,12 +267,113 @@ impl SubmitCommand {
         assignments.retain(|assignment| assignment.course == course);
         assignments.sort_by(|a, b| a.submitted.cmp(&b.submitted).then(a.due_at.cmp(&b.due_at)));
         let matcher = fuzzy_matcher::skim::SkimMatcherV2::default();
-        let _assignment = Select::new("Assignment?", assignments)
+        let assignment = Select::new("Assignment?", assignments)
             .with_filter(&|input, _, string_value, _| {
                 matcher.fuzzy_match(string_value, input).is_some()
             })
             .prompt()?;
 
+        // upload files
+        for filepath in self.files.iter() {
+            upload_file(&url, &course, &assignment, &client, &filepath).await?;
+        }
+
         Ok(())
     }
+}
+
+async fn upload_file(
+    url: &str,
+    course: &Course,
+    assignment: &Assignment,
+    client: &Client,
+    filepath: &str,
+) -> Result<UploadResponse, anyhow::Error> {
+    let metadata = std::fs::metadata(filepath).unwrap();
+    let path = std::path::Path::new(filepath);
+    let file = tokio::fs::File::open(path).await.unwrap();
+    let basename = path.file_name().unwrap().to_str().unwrap();
+
+    let spinner = indicatif::ProgressBar::new_spinner();
+    spinner.set_message(format!("Uploading file {} as {}", filepath, basename));
+
+    let spinner_clone = spinner.clone();
+    let spinner_task = tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            spinner_clone.inc(1);
+        }
+    });
+
+    let upload_bucket = client
+        .post(format!(
+            "{}api/v1/courses/{}/assignments/{}/submissions/self/files",
+            url, course.id, assignment.id
+        ))
+        .form(&HashMap::from([
+            ("name", basename),
+            ("size", metadata.len().to_string().as_str()),
+        ]))
+        .send()
+        .await?
+        .json::<UploadBucket>()
+        .await
+        .unwrap();
+
+    spinner.set_message(format!(
+        "Uploading {}: recieved upload bucket, sending file payload",
+        filepath
+    ));
+
+    let location = client
+        .post(upload_bucket.upload_url)
+        .multipart(
+            upload_bucket
+                .upload_params
+                .into_iter()
+                .fold(Form::new(), |form, (k, v)| form.text(k, v))
+                .part(
+                    "file",
+                    Part::stream(Body::wrap_stream(FramedRead::new(file, BytesCodec::new()))),
+                ),
+        )
+        .send()
+        .await?
+        .headers()
+        .get("Location")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_owned();
+
+    spinner.set_message(format!(
+        "Uploading {}: recieved upload location, checking response",
+        filepath
+    ));
+
+    let upload_response = client
+        .post(location)
+        .header("Content-Length", 0)
+        .send()
+        .await?
+        .json::<UploadResponse>()
+        .await
+        .unwrap();
+
+    spinner_task.abort();
+    spinner.set_style(ProgressStyle::with_template("✓ {wide_msg}").unwrap());
+    match &upload_response.display_name {
+        Some(display_name) => {
+            spinner.finish_with_message(format!("Uploaded file {} as {}", filepath, display_name))
+        }
+        None => spinner.finish_with_message(format!("Uploaded file {}", filepath)),
+    }
+
+    Ok(upload_response)
+}
+
+fn file_to_body(file: File) -> Body {
+    let stream = FramedRead::new(file, BytesCodec::new());
+    let body = Body::wrap_stream(stream);
+    body
 }
