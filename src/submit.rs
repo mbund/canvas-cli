@@ -60,7 +60,7 @@ struct Assignment {
     due_at: Option<DateTime>,
     course: Course,
     submitted: bool,
-    submission_type: SubmissionType,
+    submission_types: Vec<SubmissionType>,
 }
 
 impl Display for Assignment {
@@ -219,20 +219,15 @@ impl SubmitCommand {
                                 false
                             };
 
-                            let submission_type = assignment_props
-                                .submission_types
-                                .as_ref()
-                                .unwrap()
-                                .into_iter()
-                                .next()
-                                .unwrap();
+                            let submission_types =
+                                assignment_props.submission_types.as_ref().unwrap();
 
                             Assignment {
                                 name: assignment_props.name.as_ref().unwrap().to_owned(),
                                 id: assignment_props.id.to_owned(),
                                 due_at: assignment_props.due_at.to_owned(),
                                 submitted,
-                                submission_type: submission_type.to_owned(),
+                                submission_types: submission_types.to_owned(),
                                 course: Course {
                                     name: course.name.to_owned(),
                                     id: course.id.to_owned(),
@@ -263,9 +258,13 @@ impl SubmitCommand {
         let course = Select::new("Course?", courses).prompt()?;
 
         // get assignment
-        assignments.retain(|assignment| match assignment.submission_type {
-            SubmissionType::online_upload => true,
-            _ => false, // TODO: support more upload types
+        assignments.retain(|assignment| {
+            assignment.submission_types.iter().any(|submission_type| {
+                match submission_type {
+                    SubmissionType::online_upload => true,
+                    _ => false, // TODO: support more upload types
+                }
+            })
         });
         assignments.retain(|assignment| assignment.course == course);
         assignments.sort_by(|a, b| a.submitted.cmp(&b.submitted).then(a.due_at.cmp(&b.due_at)));
