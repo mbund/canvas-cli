@@ -315,7 +315,7 @@ impl SubmitCommand {
         submit_reponse.error_for_status()?;
 
         println!(
-            "✓ Submitted file{} to assignment",
+            "✓ Successfully submitted file{} to assignment 🎉",
             if self.files.len() > 1 { "s" } else { "" }
         );
 
