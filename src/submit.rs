@@ -149,16 +149,16 @@ impl SubmitCommand {
 
         let graphql_assignment_request = graphql_client::reqwest::post_graphql::<QueryAssignments, _>(
             &client,
-            format!("{}api/graphql", url),
+            format!("{}/api/graphql", url),
             query_assignments::Variables {},
         );
 
         let favorites_request = client
-            .get(format!("{}api/v1/users/self/favorites/courses", url))
+            .get(format!("{}/api/v1/users/self/favorites/courses", url))
             .send();
 
         let colors_request = client
-            .get(format!("{}api/v1/users/self/colors", url))
+            .get(format!("{}/api/v1/users/self/colors", url))
             .send();
 
         let colors = colors_request.await?.json::<ColorsResponse>().await?;
@@ -304,7 +304,7 @@ impl SubmitCommand {
         ));
         let submit_reponse = client
             .post(format!(
-                "{}api/v1/courses/{}/assignments/{}/submissions",
+                "{}/api/v1/courses/{}/assignments/{}/submissions",
                 url, course.id, assignment.id
             ))
             .query(&params)
@@ -348,7 +348,7 @@ async fn upload_file(
 
     let upload_bucket = client
         .post(format!(
-            "{}api/v1/courses/{}/assignments/{}/submissions/self/files",
+            "{}/api/v1/courses/{}/assignments/{}/submissions/self/files",
             url, course.id, assignment.id
         ))
         .form(&HashMap::from([

@@ -36,7 +36,7 @@ pub struct AuthCommand {
 #[derive(Deserialize, Debug)]
 struct SelfResponse {
     name: String,
-    pronouns: String,
+    pronouns: Option<String>,
 }
 
 impl AuthCommand {
@@ -78,7 +78,7 @@ impl AuthCommand {
         });
 
         let self_query = client
-            .get(format!("{}api/v1/users/self", url))
+            .get(format!("{}/api/v1/users/self", url))
             .send()
             .await?
             .json::<SelfResponse>()
@@ -88,7 +88,10 @@ impl AuthCommand {
         spinner.set_style(ProgressStyle::with_template("✓ {wide_msg}").unwrap());
         spinner.finish_with_message("Test query successful");
         println!("Authenticated as: ");
-        println!("  {} ({})", self_query.name, self_query.pronouns);
+        match self_query.pronouns {
+            Some(p) => println!("  {} ({})", self_query.name, p),
+            None => println!("  {}", self_query.name),
+        };
 
         cfg.url = url;
         cfg.access_token = access_token;
