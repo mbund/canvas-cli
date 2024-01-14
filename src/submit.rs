@@ -170,8 +170,6 @@ impl SubmitCommand {
                 .collect();
             log::info!("Made REST request to get course colors");
 
-            println!("✓ Queried course information");
-
             let course = Course {
                 name: course_response.name,
                 id: course_response.id,
