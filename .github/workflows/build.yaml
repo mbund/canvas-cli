@@ -1,0 +1,42 @@
+name: Build and Release
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - src/**
+      - Cargo.toml
+      - Cargo.lock
+      - .github/workflows/build.yaml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install Rust
+        run: |
+          sudo apt-get install musl-tools
+          rustup target add x86_64-unknown-linux-musl
+
+      - name: Build
+        run: |
+          cargo build --release --target=x86_64-unknown-linux-musl
+          cp target/x86_64-unknown-linux-musl/release/canvas-cli canvas-cli-x86_64-unknown-linux-musl
+
+      - name: Get tag name
+        id: tag-name
+        run: |
+          echo "tagname=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create ${{ steps.tag-name.outputs.tagname }} -t "Linter" -n "Binary release (${{ steps.tag-name.outputs.tagname }})"
+          gh release upload ${{ steps.tag-name.outputs.tagname }} canvas-cli-x86_64-unknown-linux-musl
