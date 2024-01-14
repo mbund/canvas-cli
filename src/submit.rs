@@ -61,6 +61,16 @@ impl Display for Assignment {
 pub struct SubmitCommand {
     /// File(s)
     files: Vec<String>,
+
+    /// Course ID.
+    /// If not specified, will prompt for course
+    #[clap(long, short)]
+    course: Option<u32>,
+
+    /// Assignment ID.
+    /// If not specified, will prompt for assignment
+    #[clap(long, short)]
+    assignment: Option<u32>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -135,85 +145,151 @@ impl SubmitCommand {
             .build()
             .unwrap();
 
-        let courses_response = client
-            .get(format!(
-                "{}/api/v1/courses?per_page=1000&include[]=favorites&include[]=concluded",
-                url
-            ))
-            .send()
-            .await?
-            .json::<Vec<CourseResponse>>()
-            .await?;
-        log::info!("Made REST request to get favorite courses");
+        let course = if let Some(course_id) = self.course {
+            let course_response = client
+                .get(format!(
+                    "{}/api/v1/courses/{}?include[]=favorites&include[]=concluded",
+                    url, course_id
+                ))
+                .send()
+                .await?
+                .json::<CourseResponse>()
+                .await?;
+            log::info!("Made REST request to get course information");
 
-        let course_colors: HashMap<u32, String> = client
-            .get(format!("{}/api/v1/users/self/colors", url))
-            .send()
-            .await?
-            .json::<ColorsResponse>()
-            .await?
-            .custom_colors
-            .into_iter()
-            .filter(|(k, _)| k.starts_with("course_"))
-            .map(|(k, v)| (k.trim_start_matches("course_").parse::<u32>().unwrap(), v))
-            .collect();
-        log::info!("Made REST request to get course colors");
+            let course_colors: HashMap<u32, String> = client
+                .get(format!("{}/api/v1/users/self/colors", url))
+                .send()
+                .await?
+                .json::<ColorsResponse>()
+                .await?
+                .custom_colors
+                .into_iter()
+                .filter(|(k, _)| k.starts_with("course_"))
+                .map(|(k, v)| (k.trim_start_matches("course_").parse::<u32>().unwrap(), v))
+                .collect();
+            log::info!("Made REST request to get course colors");
 
-        println!("✓ Queried assignment information");
+            println!("✓ Queried course information");
 
-        let mut courses: Vec<Course> = courses_response
-            .into_iter()
-            .filter(|course| !course.concluded)
-            .map(|course| Course {
-                name: course.name.clone(),
-                id: course.id,
-                is_favorite: course.is_favorite,
-                css_color: course_colors.get(&course.id).cloned(),
-                created_at: course.created_at,
-            })
-            .collect();
+            let course = Course {
+                name: course_response.name,
+                id: course_response.id,
+                is_favorite: course_response.is_favorite,
+                css_color: course_colors.get(&course_response.id).cloned(),
+                created_at: course_response.created_at,
+            };
 
-        courses.sort_by(|a, b| {
-            b.is_favorite
-                .cmp(&a.is_favorite)
-                .then(a.created_at.cmp(&b.created_at))
-        });
-        let course = Select::new("Course?", courses).prompt()?;
+            println!("✓ Found {course}");
+            course
+        } else {
+            let courses_response = client
+                .get(format!(
+                    "{}/api/v1/courses?per_page=1000&include[]=favorites&include[]=concluded",
+                    url
+                ))
+                .send()
+                .await?
+                .json::<Vec<CourseResponse>>()
+                .await?;
+            log::info!("Made REST request to get favorite courses");
+
+            let course_colors: HashMap<u32, String> = client
+                .get(format!("{}/api/v1/users/self/colors", url))
+                .send()
+                .await?
+                .json::<ColorsResponse>()
+                .await?
+                .custom_colors
+                .into_iter()
+                .filter(|(k, _)| k.starts_with("course_"))
+                .map(|(k, v)| (k.trim_start_matches("course_").parse::<u32>().unwrap(), v))
+                .collect();
+            log::info!("Made REST request to get course colors");
+
+            println!("✓ Queried course information");
+
+            let mut courses: Vec<Course> = courses_response
+                .into_iter()
+                .filter(|course| !course.concluded)
+                .map(|course| Course {
+                    name: course.name.clone(),
+                    id: course.id,
+                    is_favorite: course.is_favorite,
+                    css_color: course_colors.get(&course.id).cloned(),
+                    created_at: course.created_at,
+                })
+                .collect();
+
+            courses.sort_by(|a, b| {
+                b.is_favorite
+                    .cmp(&a.is_favorite)
+                    .then(a.created_at.cmp(&b.created_at))
+            });
+            Select::new("Course?", courses).prompt()?
+        };
+
         log::info!("Selected course {}", course.id);
 
-        let mut assignments: Vec<Assignment> = client
-            .get(format!(
-                "{}/api/v1/courses/{}/assignments?per_page=1000",
-                url, course.id
-            ))
-            .send()
-            .await?
-            .json::<Vec<AssignmentResponse>>()
-            .await?
-            .into_iter()
-            .filter(|assignment| {
-                !assignment.locked_for_user && assignment.submission_types[0] == "online_upload"
-            })
-            .map(|assignment| Assignment {
-                name: assignment.name,
-                id: assignment.id,
-                due_at: assignment.due_at,
-                is_graded: assignment.graded_submissions_exist,
-            })
-            .collect();
+        let assignment = if let Some(assignment_id) = self.assignment {
+            let assignment_response = client
+                .get(format!(
+                    "{}/api/v1/courses/{}/assignments/{}",
+                    url, course.id, assignment_id
+                ))
+                .send()
+                .await?
+                .json::<AssignmentResponse>()
+                .await?;
+            log::info!("Made REST request to get assignment information");
 
-        assignments.sort_by(|a, b| a.is_graded.cmp(&b.is_graded).then(a.due_at.cmp(&b.due_at)));
-        let matcher = fuzzy_matcher::skim::SkimMatcherV2::default();
-        let assignment = Select::new("Assignment?", assignments)
-            .with_filter(&|input, _, string_value, _| {
-                matcher.fuzzy_match(string_value, input).is_some()
-            })
-            .prompt()?;
+            let assignment = Assignment {
+                name: assignment_response.name,
+                id: assignment_response.id,
+                due_at: assignment_response.due_at,
+                is_graded: assignment_response.graded_submissions_exist,
+            };
+
+            println!("✓ Found {assignment}");
+
+            assignment
+        } else {
+            let mut assignments: Vec<Assignment> = client
+                .get(format!(
+                    "{}/api/v1/courses/{}/assignments?per_page=1000",
+                    url, course.id
+                ))
+                .send()
+                .await?
+                .json::<Vec<AssignmentResponse>>()
+                .await?
+                .into_iter()
+                .filter(|assignment| {
+                    !assignment.locked_for_user && assignment.submission_types[0] == "online_upload"
+                })
+                .map(|assignment| Assignment {
+                    name: assignment.name,
+                    id: assignment.id,
+                    due_at: assignment.due_at,
+                    is_graded: assignment.graded_submissions_exist,
+                })
+                .collect();
+            log::info!("Made REST request to get assignment information");
+            println!("✓ Queried assignment information");
+
+            assignments.sort_by(|a, b| a.is_graded.cmp(&b.is_graded).then(a.due_at.cmp(&b.due_at)));
+            let matcher = fuzzy_matcher::skim::SkimMatcherV2::default();
+            Select::new("Assignment?", assignments)
+                .with_filter(&|input, _, string_value, _| {
+                    matcher.fuzzy_match(string_value, input).is_some()
+                })
+                .prompt()?
+        };
 
         log::info!("Selected assignment {}", assignment.id);
 
         let multi_progress = MultiProgress::new();
-        let futures = self.files.iter().map(|filepath| {
+        let future_files = self.files.iter().map(|filepath| {
             upload_file(
                 &url,
                 &course,
@@ -224,7 +300,7 @@ impl SubmitCommand {
             )
         });
 
-        let uploaded_files = futures::future::join_all(futures).await;
+        let uploaded_files = futures::future::join_all(future_files).await;
         let mut params: Vec<(String, String)> = uploaded_files
             .into_iter()
             .map(|f| {
