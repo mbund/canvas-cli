@@ -62,13 +62,11 @@ pub struct SubmitCommand {
     /// File(s)
     files: Vec<String>,
 
-    /// Course ID.
-    /// If not specified, will prompt for course
+    /// Optional course ID
     #[clap(long, short)]
     course: Option<u32>,
 
-    /// Assignment ID.
-    /// If not specified, will prompt for assignment
+    /// Optional assignment ID
     #[clap(long, short)]
     assignment: Option<u32>,
 }
