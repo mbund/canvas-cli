@@ -1,6 +1,6 @@
 use indicatif::ProgressStyle;
 use inquire::{Password, PasswordDisplayMode, Text};
-use serde::Deserialize;
+use serde_derive::Deserialize;
 
 use crate::Config;
 

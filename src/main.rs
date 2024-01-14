@@ -1,4 +1,4 @@
-use clap::Parser;
+use clap::{CommandFactory, Parser, Subcommand};
 use serde_derive::{Deserialize, Serialize};
 
 pub mod auth;
@@ -27,10 +27,17 @@ struct Args {
     action: Action,
 }
 
-#[derive(clap::Subcommand, Debug)]
+#[derive(Subcommand, Debug)]
 enum Action {
     Auth(auth::AuthCommand),
     Submit(submit::SubmitCommand),
+
+    /// Generate shell completions
+    Completions {
+        /// The shell to generate the completions for
+        #[arg(value_enum)]
+        shell: clap_complete_command::Shell,
+    },
 }
 
 #[tokio::main]
@@ -43,5 +50,9 @@ async fn main() -> Result<(), anyhow::Error> {
     match args.action {
         Action::Auth(command) => command.action(&mut cfg).await,
         Action::Submit(command) => command.action(&cfg).await,
+
+        Action::Completions { shell } => Ok({
+            shell.generate(&mut Args::command(), &mut std::io::stdout());
+        }),
     }
 }
