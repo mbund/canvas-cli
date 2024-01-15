@@ -1,13 +1,11 @@
-#![allow(dead_code)]
-
-use std::{collections::HashMap, fmt::Display, hash::Hash};
+use std::{collections::HashMap, fmt::Display};
 
 use crate::Config;
 use anyhow::anyhow;
-use colored::Colorize;
+use canvas_cli::{Course, DateTime};
 use fuzzy_matcher::FuzzyMatcher;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use inquire::*;
+use inquire::Select;
 use reqwest::{
     multipart::{Form, Part},
     Body, Client,
@@ -15,37 +13,10 @@ use reqwest::{
 use serde_derive::Deserialize;
 use tokio_util::codec::{BytesCodec, FramedRead};
 
-pub type DateTime = chrono::DateTime<chrono::Utc>;
-
-#[derive(Debug, Hash, Clone, PartialEq, Eq)]
-struct Course {
-    name: String,
-    id: u32,
-    is_favorite: bool,
-    css_color: Option<String>,
-    created_at: DateTime,
-}
-
-impl Display for Course {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let css_color = self.css_color.clone().unwrap_or("#000000".to_string());
-        let color = csscolorparser::parse(&css_color)
-            .unwrap()
-            .to_linear_rgba_u8();
-        write!(
-            f,
-            "{}{}{}",
-            "█ ".truecolor(color.0, color.1, color.2),
-            self.name,
-            if self.is_favorite { " ★" } else { "" }.yellow()
-        )
-    }
-}
-
 #[derive(Debug)]
 struct Assignment {
-    name: String,
     id: u32,
+    name: String,
     due_at: Option<DateTime>,
     is_graded: bool,
 }
@@ -56,43 +27,14 @@ impl Display for Assignment {
     }
 }
 
-#[derive(clap::Parser, Debug)]
-/// Submit Canvas assignment
-pub struct SubmitCommand {
-    /// File(s)
-    files: Vec<String>,
-
-    /// Optional course ID
-    #[clap(long, short)]
-    course: Option<u32>,
-
-    /// Optional assignment ID
-    #[clap(long, short)]
-    assignment: Option<u32>,
-}
-
-#[derive(Deserialize, Debug)]
-struct CourseResponse {
-    id: u32,
-    name: String,
-    is_favorite: bool,
-    created_at: DateTime,
-    concluded: bool,
-}
-
 #[derive(Deserialize, Debug)]
 struct AssignmentResponse {
-    name: String,
     id: u32,
+    name: String,
     due_at: Option<DateTime>,
     locked_for_user: bool,
     graded_submissions_exist: bool,
     submission_types: Vec<String>,
-}
-
-#[derive(Deserialize, Debug)]
-struct ColorsResponse {
-    custom_colors: HashMap<String, String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -104,10 +46,22 @@ struct UploadBucket {
 #[derive(Deserialize, Debug)]
 struct UploadResponse {
     id: u32,
-    url: String,
-    content_type: Option<String>,
     display_name: Option<String>,
-    size: Option<u32>,
+}
+
+#[derive(clap::Parser, Debug)]
+/// Submit Canvas assignment
+pub struct SubmitCommand {
+    /// File(s)
+    files: Vec<String>,
+
+    /// Canvas course ID
+    #[clap(long, short)]
+    course: Option<u32>,
+
+    /// Canvas assignment ID
+    #[clap(long, short)]
+    assignment: Option<u32>,
 }
 
 impl SubmitCommand {
@@ -143,87 +97,7 @@ impl SubmitCommand {
             .build()
             .unwrap();
 
-        let course = if let Some(course_id) = self.course {
-            let course_response = client
-                .get(format!(
-                    "{}/api/v1/courses/{}?include[]=favorites&include[]=concluded",
-                    url, course_id
-                ))
-                .send()
-                .await?
-                .json::<CourseResponse>()
-                .await?;
-            log::info!("Made REST request to get course information");
-
-            let course_colors: HashMap<u32, String> = client
-                .get(format!("{}/api/v1/users/self/colors", url))
-                .send()
-                .await?
-                .json::<ColorsResponse>()
-                .await?
-                .custom_colors
-                .into_iter()
-                .filter(|(k, _)| k.starts_with("course_"))
-                .map(|(k, v)| (k.trim_start_matches("course_").parse::<u32>().unwrap(), v))
-                .collect();
-            log::info!("Made REST request to get course colors");
-
-            let course = Course {
-                name: course_response.name,
-                id: course_response.id,
-                is_favorite: course_response.is_favorite,
-                css_color: course_colors.get(&course_response.id).cloned(),
-                created_at: course_response.created_at,
-            };
-
-            println!("✓ Found {course}");
-            course
-        } else {
-            let courses_response = client
-                .get(format!(
-                    "{}/api/v1/courses?per_page=1000&include[]=favorites&include[]=concluded",
-                    url
-                ))
-                .send()
-                .await?
-                .json::<Vec<CourseResponse>>()
-                .await?;
-            log::info!("Made REST request to get favorite courses");
-
-            let course_colors: HashMap<u32, String> = client
-                .get(format!("{}/api/v1/users/self/colors", url))
-                .send()
-                .await?
-                .json::<ColorsResponse>()
-                .await?
-                .custom_colors
-                .into_iter()
-                .filter(|(k, _)| k.starts_with("course_"))
-                .map(|(k, v)| (k.trim_start_matches("course_").parse::<u32>().unwrap(), v))
-                .collect();
-            log::info!("Made REST request to get course colors");
-
-            println!("✓ Queried course information");
-
-            let mut courses: Vec<Course> = courses_response
-                .into_iter()
-                .filter(|course| !course.concluded)
-                .map(|course| Course {
-                    name: course.name.clone(),
-                    id: course.id,
-                    is_favorite: course.is_favorite,
-                    css_color: course_colors.get(&course.id).cloned(),
-                    created_at: course.created_at,
-                })
-                .collect();
-
-            courses.sort_by(|a, b| {
-                b.is_favorite
-                    .cmp(&a.is_favorite)
-                    .then(a.created_at.cmp(&b.created_at))
-            });
-            Select::new("Course?", courses).prompt()?
-        };
+        let course = Course::fetch(self.course, &url, &client).await?;
 
         log::info!("Selected course {}", course.id);
 

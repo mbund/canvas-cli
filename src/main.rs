@@ -2,6 +2,7 @@ use clap::{CommandFactory, Parser, Subcommand};
 use serde_derive::{Deserialize, Serialize};
 
 pub mod auth;
+pub mod download;
 pub mod submit;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -31,6 +32,7 @@ struct Args {
 enum Action {
     Auth(auth::AuthCommand),
     Submit(submit::SubmitCommand),
+    Download(download::DownloadCommand),
 
     /// Generate shell completions
     Completions {
@@ -50,6 +52,7 @@ async fn main() -> Result<(), anyhow::Error> {
     match args.action {
         Action::Auth(command) => command.action(&mut cfg).await,
         Action::Submit(command) => command.action(&cfg).await,
+        Action::Download(command) => command.action(&cfg).await,
 
         Action::Completions { shell } => Ok({
             shell.generate(&mut Args::command(), &mut std::io::stdout());
