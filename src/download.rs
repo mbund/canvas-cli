@@ -50,14 +50,6 @@ pub struct DownloadCommand {
 
 impl DownloadCommand {
     pub async fn action(&self, cfg: &Config) -> Result<(), anyhow::Error> {
-        if let Some(directory) = &self.directory {
-            fs::create_dir_all(directory)?;
-            println!(
-                "✓ Downloading files into {}",
-                directory.canonicalize()?.display()
-            );
-        }
-
         let url = cfg.url.to_owned();
         let access_token = cfg.access_token.to_owned();
 
@@ -126,6 +118,14 @@ impl DownloadCommand {
         if files.len() == 0 {
             println!("No files selected");
             return Ok(());
+        }
+
+        if let Some(directory) = &self.directory {
+            fs::create_dir_all(directory)?;
+            println!(
+                "✓ Will download files into {}",
+                directory.canonicalize()?.display()
+            );
         }
 
         let multi_progress = MultiProgress::new();
