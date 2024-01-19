@@ -19,8 +19,7 @@
         };
         naersk-lib = naersk.lib."${system}";
         deps = with pkgs; [
-          pkg-config
-          openssl
+          perl
         ];
       in rec {
         packages.${name} = naersk-lib.buildPackage {
@@ -48,7 +47,6 @@
               rustfmt
               rust-analyzer
               alejandra
-              graphql-client
 
               vhs
             ]

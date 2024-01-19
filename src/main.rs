@@ -49,6 +49,14 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let args = Args::parse();
 
+    if let Ok(env_canvas_base_url) = std::env::var("CANVAS_BASE_URL") {
+        cfg.url = env_canvas_base_url;
+    }
+
+    if let Ok(env_canvas_access_token) = std::env::var("CANVAS_ACCESS_TOKEN") {
+        cfg.access_token = env_canvas_access_token;
+    }
+
     match args.action {
         Action::Auth(command) => command.action(&mut cfg).await,
         Action::Submit(command) => command.action(&cfg).await,

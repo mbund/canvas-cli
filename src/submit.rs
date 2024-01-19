@@ -6,6 +6,7 @@ use canvas_cli::{Course, DateTime};
 use fuzzy_matcher::FuzzyMatcher;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use inquire::Select;
+use regex::Regex;
 use reqwest::{
     multipart::{Form, Part},
     Body, Client,
@@ -55,6 +56,10 @@ pub struct SubmitCommand {
     /// File(s)
     files: Vec<String>,
 
+    /// Canvas URL to parse
+    #[clap(long, short)]
+    url: Option<String>,
+
     /// Canvas course ID
     #[clap(long, short)]
     course: Option<u32>,
@@ -82,7 +87,6 @@ impl SubmitCommand {
 
         println!("✓ Verified all files exist");
 
-        let url = cfg.url.to_owned();
         let access_token = cfg.access_token.to_owned();
 
         let client = reqwest::Client::builder()
@@ -97,15 +101,47 @@ impl SubmitCommand {
             .build()
             .unwrap();
 
-        let course = Course::fetch(self.course, &url, &client).await?;
+        let mut base_url = cfg.url.clone();
+        let mut course_id = self.course;
+        let mut assignment_id = self.assignment;
+        let canvas_assignment_url = if let Ok(env_canvas_url) = std::env::var("CANVAS_URL") {
+            Some(env_canvas_url)
+        } else {
+            self.url.clone()
+        };
+
+        if let Some(canvas_assignment_url) = canvas_assignment_url {
+            let regex = Regex::new(r#"(https://.+)/courses/(\d+)(?:/assignments/(\d+))?"#).unwrap();
+
+            let captures = regex.captures(&canvas_assignment_url).unwrap();
+            base_url = captures.get(1).unwrap().as_str().to_string();
+            course_id = Some(captures.get(2).unwrap().as_str().parse::<u32>().unwrap());
+            if let Some(a_id) = captures.get(3) {
+                assignment_id = Some(a_id.as_str().parse::<u32>().unwrap());
+            }
+        }
+
+        if let Ok(env_canvas_course_id) = std::env::var("CANVAS_COURSE_ID") {
+            course_id = Some(env_canvas_course_id.parse::<u32>().unwrap())
+        }
+
+        if let Ok(env_canvas_assignment_id) = std::env::var("CANVAS_ASSIGNMENT_ID") {
+            assignment_id = Some(env_canvas_assignment_id.parse::<u32>().unwrap())
+        }
+
+        let base_url = base_url;
+        let course_id = course_id;
+        let assignment_id = assignment_id;
+
+        let course = Course::fetch(course_id, &base_url, &client).await?;
 
         log::info!("Selected course {}", course.id);
 
-        let assignment = if let Some(assignment_id) = self.assignment {
+        let assignment = if let Some(assignment_id) = assignment_id {
             let assignment_response = client
                 .get(format!(
                     "{}/api/v1/courses/{}/assignments/{}",
-                    url, course.id, assignment_id
+                    base_url, course.id, assignment_id
                 ))
                 .send()
                 .await?
@@ -127,7 +163,7 @@ impl SubmitCommand {
             let mut assignments: Vec<Assignment> = client
                 .get(format!(
                     "{}/api/v1/courses/{}/assignments?per_page=1000",
-                    url, course.id
+                    base_url, course.id
                 ))
                 .send()
                 .await?
@@ -161,7 +197,7 @@ impl SubmitCommand {
         let multi_progress = MultiProgress::new();
         let future_files = self.files.iter().map(|filepath| {
             upload_file(
-                &url,
+                &base_url,
                 &course,
                 &assignment,
                 &client,
@@ -187,7 +223,7 @@ impl SubmitCommand {
         let submit_reponse = client
             .post(format!(
                 "{}/api/v1/courses/{}/assignments/{}/submissions",
-                url, course.id, assignment.id
+                base_url, course.id, assignment.id
             ))
             .query(&params)
             .send()

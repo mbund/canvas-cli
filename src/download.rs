@@ -6,6 +6,7 @@ use fuzzy_matcher::FuzzyMatcher;
 use human_bytes::human_bytes;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use inquire::MultiSelect;
+use regex::Regex;
 use serde_derive::Deserialize;
 
 #[derive(Debug)]
@@ -39,6 +40,10 @@ pub struct DownloadCommand {
     #[clap(long, short)]
     course: Option<u32>,
 
+    /// Canvas URL to parse
+    #[clap(long, short)]
+    url: Option<String>,
+
     /// Canvas file IDs
     #[clap(value_parser, num_args = 1.., value_delimiter = ' ')]
     files: Option<Vec<u32>>,
@@ -50,7 +55,6 @@ pub struct DownloadCommand {
 
 impl DownloadCommand {
     pub async fn action(&self, cfg: &Config) -> Result<(), anyhow::Error> {
-        let url = cfg.url.to_owned();
         let access_token = cfg.access_token.to_owned();
 
         let client = reqwest::Client::builder()
@@ -65,14 +69,37 @@ impl DownloadCommand {
             .build()
             .unwrap();
 
-        let course = Course::fetch(self.course, &url, &client).await?;
+        let mut base_url = cfg.url.clone();
+        let mut course_id = self.course;
+        let canvas_file_url = if let Ok(env_canvas_url) = std::env::var("CANVAS_URL") {
+            Some(env_canvas_url)
+        } else {
+            self.url.clone()
+        };
+
+        if let Some(canvas_assignment_url) = canvas_file_url {
+            let regex = Regex::new(r#"(https://.+)/courses/(\d+)"#).unwrap();
+
+            let captures = regex.captures(&canvas_assignment_url).unwrap();
+            base_url = captures.get(1).unwrap().as_str().to_string();
+            course_id = Some(captures.get(2).unwrap().as_str().parse::<u32>().unwrap());
+        }
+
+        if let Ok(env_canvas_course_id) = std::env::var("CANVAS_COURSE_ID") {
+            course_id = Some(env_canvas_course_id.parse::<u32>().unwrap())
+        }
+
+        let base_url = base_url;
+        let course_id = course_id;
+
+        let course = Course::fetch(course_id, &base_url, &client).await?;
 
         log::info!("Selected course {}", course.id);
 
         let file_request = client
             .get(format!(
                 "{}/api/v1/courses/{}/files?per_page=1000",
-                url, course.id
+                base_url, course.id
             ))
             .send()
             .await?;
