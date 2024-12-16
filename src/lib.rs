@@ -94,8 +94,12 @@ impl Course {
                 ))
                 .send()
                 .await?
-                .json::<Vec<CourseResponse>>()
-                .await?;
+                .json::<Vec<serde_json::Value>>()
+                .await?
+                .into_iter()
+                .filter_map(|v| serde_json::from_value(v).ok())
+                .collect::<Vec<CourseResponse>>();
+
             log::info!("Made REST request to get favorite courses");
 
             let course_colors: HashMap<u32, String> = client

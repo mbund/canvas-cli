@@ -1,6 +1,6 @@
 use std::{fmt::Display, fs, io::Cursor, path::PathBuf};
 
-use crate::Config;
+use crate::{Config, NonEmptyConfig};
 use canvas_cli::{Course, DateTime};
 use fuzzy_matcher::FuzzyMatcher;
 use human_bytes::human_bytes;
@@ -55,7 +55,10 @@ pub struct DownloadCommand {
 
 impl DownloadCommand {
     pub async fn action(&self, cfg: &Config) -> Result<(), anyhow::Error> {
-        let access_token = cfg.access_token.to_owned();
+        let NonEmptyConfig {
+            url: mut base_url,
+            access_token,
+        } = cfg.ensure_non_empty()?;
 
         let client = reqwest::Client::builder()
             .default_headers(
@@ -69,7 +72,6 @@ impl DownloadCommand {
             .build()
             .unwrap();
 
-        let mut base_url = cfg.url.clone();
         let mut course_id = self.course;
         let canvas_file_url = if let Ok(env_canvas_url) = std::env::var("CANVAS_URL") {
             Some(env_canvas_url)

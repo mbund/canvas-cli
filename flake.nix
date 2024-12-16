@@ -47,10 +47,11 @@
               rustfmt
               rust-analyzer
               alejandra
-
               vhs
             ]
             ++ deps;
+
+          RUST_SRC_PATH = "${pkgs.rust.packages.stable.rustPlatform.rustLibSrc}";
         };
       }
     );

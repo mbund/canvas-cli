@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fmt::Display};
 
-use crate::Config;
+use crate::{Config, NonEmptyConfig};
 use anyhow::anyhow;
 use canvas_cli::{Course, DateTime};
 use fuzzy_matcher::FuzzyMatcher;
@@ -71,6 +71,11 @@ pub struct SubmitCommand {
 
 impl SubmitCommand {
     pub async fn action(&self, cfg: &Config) -> Result<(), anyhow::Error> {
+        let NonEmptyConfig {
+            url: mut base_url,
+            access_token,
+        } = cfg.ensure_non_empty()?;
+
         // verify all files exist first before doing anything which needs a network connections
         if self.files.len() == 0 {
             Err(anyhow!("Must submit at least one file"))?;
@@ -87,8 +92,6 @@ impl SubmitCommand {
 
         println!("✓ Verified all files exist");
 
-        let access_token = cfg.access_token.to_owned();
-
         let client = reqwest::Client::builder()
             .default_headers(
                 std::iter::once((
@@ -101,7 +104,6 @@ impl SubmitCommand {
             .build()
             .unwrap();
 
-        let mut base_url = cfg.url.clone();
         let mut course_id = self.course;
         let mut assignment_id = self.assignment;
         let canvas_assignment_url = if let Ok(env_canvas_url) = std::env::var("CANVAS_URL") {
