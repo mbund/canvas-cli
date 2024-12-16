@@ -64,9 +64,15 @@ enum Action {
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     env_logger::init();
-    let mut cfg: Config = confy::load("canvas-cli", "config")?;
 
     let args = Args::parse();
+
+    // Don't load the config if doing completions, since that accesses the home directory and breaks the nix build
+    if let Action::Completions { shell } = args.action {
+        return Ok(shell.generate(&mut Args::command(), &mut std::io::stdout()));
+    }
+
+    let mut cfg: Config = confy::load("canvas-cli", "config")?;
 
     if let Ok(env_canvas_base_url) = std::env::var("CANVAS_BASE_URL") {
         cfg.url = Some(env_canvas_base_url);
@@ -81,8 +87,6 @@ async fn main() -> Result<(), anyhow::Error> {
         Action::Submit(command) => command.action(&cfg).await,
         Action::Download(command) => command.action(&cfg).await,
 
-        Action::Completions { shell } => Ok({
-            shell.generate(&mut Args::command(), &mut std::io::stdout());
-        }),
+        Action::Completions { shell } => unreachable!(),
     }
 }
