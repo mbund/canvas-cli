@@ -13,7 +13,7 @@ pub struct Config {
     access_token: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Default)]
+#[derive(Debug)]
 pub struct NonEmptyConfig {
     url: String,
     access_token: String,
