@@ -49,6 +49,10 @@ impl AuthCommand {
         let access_token = match self.access_token {
             Some(access_token) => Ok(access_token),
             None => Password::new("Access token:")
+                .with_help_message(&format!(
+                    "Generate an access token at {}/profile/settings",
+                    &url.trim_end_matches('/'),
+                ))
                 .with_display_mode(PasswordDisplayMode::Masked)
                 .without_confirmation()
                 .prompt(),
@@ -93,10 +97,8 @@ impl AuthCommand {
             None => println!("  {}", self_query.name),
         };
 
-        cfg.url = url;
-        cfg.access_token = access_token;
-
-        // REST /api/v1/users/self
+        cfg.url = Some(url);
+        cfg.access_token = Some(access_token);
 
         confy::store("canvas-cli", "config", cfg)?;
 

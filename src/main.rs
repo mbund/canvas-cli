@@ -1,21 +1,40 @@
+use anyhow::anyhow;
 use clap::{CommandFactory, Parser, Subcommand};
 use serde_derive::{Deserialize, Serialize};
+use std::env;
 
 pub mod auth;
 pub mod download;
 pub mod submit;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 pub struct Config {
+    url: Option<String>,
+    access_token: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Default)]
+pub struct NonEmptyConfig {
     url: String,
     access_token: String,
 }
 
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            url: "".into(),
-            access_token: "".into(),
+impl Config {
+    pub fn ensure_non_empty(&self) -> Result<NonEmptyConfig, anyhow::Error> {
+        match self {
+            Self {
+                url: Some(url),
+                access_token: Some(access_token),
+            } => Ok(NonEmptyConfig {
+                url: url.clone(),
+                access_token: access_token.clone(),
+            }),
+            _ => Err(anyhow!(
+                "canvas-cli is not configured. Run {} auth",
+                env::args()
+                    .nth(0)
+                    .unwrap_or_else(|| "canvas-cli".to_owned())
+            )),
         }
     }
 }
@@ -50,11 +69,11 @@ async fn main() -> Result<(), anyhow::Error> {
     let args = Args::parse();
 
     if let Ok(env_canvas_base_url) = std::env::var("CANVAS_BASE_URL") {
-        cfg.url = env_canvas_base_url;
+        cfg.url = Some(env_canvas_base_url);
     }
 
     if let Ok(env_canvas_access_token) = std::env::var("CANVAS_ACCESS_TOKEN") {
-        cfg.access_token = env_canvas_access_token;
+        cfg.access_token = Some(env_canvas_access_token);
     }
 
     match args.action {
