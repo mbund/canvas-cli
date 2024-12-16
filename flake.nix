@@ -28,6 +28,15 @@
           doCheck = true;
           copyLibs = true;
           buildInputs = deps;
+            overrideMain = old: {
+            postInstall = ''
+              installShellCompletion --cmd canvas-cli \
+                --bash <($out/bin/canvas-cli completions bash) \
+                --fish <($out/bin/canvas-cli completions fish) \
+                --zsh <($out/bin/canvas-cli completions zsh)
+              '';
+          };
+          nativeBuildInputs = with pkgs; [ installShellFiles ];
         };
         packages.default = packages.${name};
 
