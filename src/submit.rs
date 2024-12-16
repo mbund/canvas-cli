@@ -72,7 +72,7 @@ pub struct SubmitCommand {
 impl SubmitCommand {
     pub async fn action(&self, cfg: &Config) -> Result<(), anyhow::Error> {
         let NonEmptyConfig {
-            url: base_url,
+            url: mut base_url,
             access_token,
         } = cfg.ensure_non_empty()?;
 
@@ -104,7 +104,6 @@ impl SubmitCommand {
             .build()
             .unwrap();
 
-        let mut base_url = base_url;
         let mut course_id = self.course;
         let mut assignment_id = self.assignment;
         let canvas_assignment_url = if let Ok(env_canvas_url) = std::env::var("CANVAS_URL") {

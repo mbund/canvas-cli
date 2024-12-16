@@ -56,7 +56,7 @@ pub struct DownloadCommand {
 impl DownloadCommand {
     pub async fn action(&self, cfg: &Config) -> Result<(), anyhow::Error> {
         let NonEmptyConfig {
-            url: base_url,
+            url: mut base_url,
             access_token,
         } = cfg.ensure_non_empty()?;
 
@@ -72,7 +72,6 @@ impl DownloadCommand {
             .build()
             .unwrap();
 
-        let mut base_url = base_url;
         let mut course_id = self.course;
         let canvas_file_url = if let Ok(env_canvas_url) = std::env::var("CANVAS_URL") {
             Some(env_canvas_url)
