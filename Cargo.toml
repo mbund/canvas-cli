@@ -2,6 +2,11 @@
 name = "canvas-cli"
 version = "0.1.0"
 edition = "2021"
+description = "Interact with Canvas LMS from the command line."
+authors = ["Mark Bundschuh <mark@mbund.dev>"]
+license = "GPL-3.0+"
+repository = "https://github.com/mbund/canvas-cli"
+keywords = ["http", "cli", "canvas"]
 
 [dependencies]
 anyhow = "1.0.79"
