@@ -124,7 +124,7 @@ impl DownloadCommand {
             })
             .collect();
 
-        if files.len() == 0 {
+        if files.is_empty() {
             println!("No files available");
             return Ok(());
         }
@@ -136,15 +136,14 @@ impl DownloadCommand {
         } else {
             files.sort_by(|a, b| a.updated_at.cmp(&b.updated_at));
             let matcher = fuzzy_matcher::skim::SkimMatcherV2::default();
-            let files = MultiSelect::new("Files?", files)
+            MultiSelect::new("Files?", files)
                 .with_filter(&|input, _, string_value, _| {
                     matcher.fuzzy_match(string_value, input).is_some()
                 })
-                .prompt()?;
-            files
+                .prompt()?
         };
 
-        if files.len() == 0 {
+        if files.is_empty() {
             println!("No files selected");
             return Ok(());
         }
@@ -160,7 +159,7 @@ impl DownloadCommand {
         let multi_progress = MultiProgress::new();
         let future_files = files
             .iter()
-            .map(|file| upload_file(&file, self.directory.as_ref(), &multi_progress));
+            .map(|file| upload_file(file, self.directory.as_ref(), &multi_progress));
         futures::future::join_all(future_files).await;
 
         println!("✓ Successfully downloaded files 🎉");

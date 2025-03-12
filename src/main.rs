@@ -69,7 +69,8 @@ async fn main() -> Result<(), anyhow::Error> {
 
     // Don't load the config if doing completions, since that accesses the home directory and breaks the nix build
     if let Action::Completions { shell } = args.action {
-        return Ok(shell.generate(&mut Args::command(), &mut std::io::stdout()));
+        shell.generate(&mut Args::command(), &mut std::io::stdout());
+        return Ok(());
     }
 
     let mut cfg: Config = confy::load("canvas-cli", "config")?;

@@ -73,12 +73,12 @@ impl SubmitCommand {
         } = cfg.ensure_non_empty()?;
 
         // verify all files exist first before doing anything which needs a network connections
-        if self.files.len() == 0 {
+        if self.files.is_empty() {
             Err(anyhow!("Must submit at least one file"))?;
         }
 
         for file in self.files.iter() {
-            match std::fs::metadata(&file) {
+            match std::fs::metadata(file) {
                 Ok(_) => Ok(()),
                 Err(error) => Err(anyhow!("{}: {}", error, file)),
             }?;
@@ -199,7 +199,7 @@ impl SubmitCommand {
                 &course,
                 &assignment,
                 &client,
-                &filepath,
+                filepath,
                 &multi_progress,
             )
         });
