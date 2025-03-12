@@ -3,7 +3,6 @@ use std::{collections::HashMap, fmt::Display};
 use crate::{Config, NonEmptyConfig};
 use anyhow::anyhow;
 use canvas_cli::{Course, DateTime};
-use fuzzy_matcher::FuzzyMatcher;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use inquire::Select;
 use regex::Regex;
@@ -182,12 +181,7 @@ impl SubmitCommand {
             println!("✓ Queried assignment information");
 
             assignments.sort_by(|a, b| a.is_graded.cmp(&b.is_graded).then(a.due_at.cmp(&b.due_at)));
-            let matcher = fuzzy_matcher::skim::SkimMatcherV2::default();
-            Select::new("Assignment?", assignments)
-                .with_filter(&|input, _, string_value, _| {
-                    matcher.fuzzy_match(string_value, input).is_some()
-                })
-                .prompt()?
+            Select::new("Assignment?", assignments).prompt()?
         };
 
         log::info!("Selected assignment {}", assignment.id);
@@ -205,19 +199,11 @@ impl SubmitCommand {
         });
 
         let uploaded_files = futures::future::join_all(future_files).await;
-        let mut params: Vec<(String, String)> = uploaded_files
+        let mut params: Vec<(&'static str, String)> = uploaded_files
             .into_iter()
-            .map(|f| {
-                (
-                    "submission[file_ids][]".to_string(),
-                    f.unwrap().id.to_string(),
-                )
-            })
+            .map(|f| ("submission[file_ids][]", f.unwrap().id.to_string()))
             .collect();
-        params.push((
-            "submission[submission_type]".to_string(),
-            "online_upload".to_string(),
-        ));
+        params.push(("submission[submission_type]", "online_upload".to_string()));
         let submit_reponse = client
             .post(format!(
                 "{}/api/v1/courses/{}/assignments/{}/submissions",

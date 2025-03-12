@@ -2,7 +2,6 @@ use std::{fmt::Display, fs, io::Cursor, path::PathBuf};
 
 use crate::{Config, NonEmptyConfig};
 use canvas_cli::{Course, DateTime};
-use fuzzy_matcher::FuzzyMatcher;
 use human_bytes::human_bytes;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use inquire::MultiSelect;
@@ -135,12 +134,7 @@ impl DownloadCommand {
             files
         } else {
             files.sort_by(|a, b| a.updated_at.cmp(&b.updated_at));
-            let matcher = fuzzy_matcher::skim::SkimMatcherV2::default();
-            MultiSelect::new("Files?", files)
-                .with_filter(&|input, _, string_value, _| {
-                    matcher.fuzzy_match(string_value, input).is_some()
-                })
-                .prompt()?
+            MultiSelect::new("Files?", files).prompt()?
         };
 
         if files.is_empty() {
@@ -159,7 +153,7 @@ impl DownloadCommand {
         let multi_progress = MultiProgress::new();
         let future_files = files
             .iter()
-            .map(|file| upload_file(file, self.directory.as_ref(), &multi_progress));
+            .map(|file| download_file(file, self.directory.as_ref(), &multi_progress));
         futures::future::join_all(future_files).await;
 
         println!("✓ Successfully downloaded files 🎉");
@@ -168,7 +162,7 @@ impl DownloadCommand {
     }
 }
 
-async fn upload_file(
+async fn download_file(
     file: &File,
     directory: Option<&PathBuf>,
     multi_progress: &MultiProgress,

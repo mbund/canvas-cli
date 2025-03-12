@@ -38,7 +38,7 @@ impl Display for Course {
         write!(
             f,
             "{}{}{}",
-            "█ ".truecolor(color.0, color.1, color.2),
+            "█ ".truecolor(color[0], color[1], color[2]),
             self.name,
             if self.is_favorite { " ★" } else { "" }.yellow()
         )
