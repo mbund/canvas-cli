@@ -87,6 +87,6 @@ async fn main() -> Result<(), anyhow::Error> {
         Action::Submit(command) => command.action(&cfg).await,
         Action::Download(command) => command.action(&cfg).await,
 
-        Action::Completions { shell } => unreachable!(),
+        Action::Completions { shell: _ } => unreachable!(),
     }
 }

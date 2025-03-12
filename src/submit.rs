@@ -7,12 +7,8 @@ use fuzzy_matcher::FuzzyMatcher;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use inquire::Select;
 use regex::Regex;
-use reqwest::{
-    multipart::{Form, Part},
-    Body, Client,
-};
+use reqwest::{multipart::Form, Client};
 use serde_derive::Deserialize;
-use tokio_util::codec::{BytesCodec, FramedRead};
 
 #[derive(Debug)]
 struct Assignment {
@@ -252,7 +248,7 @@ async fn upload_file(
 ) -> Result<UploadResponse, anyhow::Error> {
     let metadata = std::fs::metadata(filepath).unwrap();
     let path = std::path::Path::new(filepath);
-    let file = tokio::fs::File::open(path).await.unwrap();
+    // let file = tokio::fs::File::open(path).await.unwrap();
     let basename = path.file_name().unwrap().to_str().unwrap();
 
     let spinner = multi_progress.add(ProgressBar::new_spinner());
@@ -286,17 +282,15 @@ async fn upload_file(
         filepath
     ));
 
-    let location = client
+    let location = Client::new()
         .post(upload_bucket.upload_url)
         .multipart(
             upload_bucket
                 .upload_params
                 .into_iter()
                 .fold(Form::new(), |form, (k, v)| form.text(k, v))
-                .part(
-                    "file",
-                    Part::stream(Body::wrap_stream(FramedRead::new(file, BytesCodec::new()))),
-                ),
+                .file("file", path)
+                .await?,
         )
         .send()
         .await?
