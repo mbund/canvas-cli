@@ -10,7 +10,7 @@ use serde_derive::Deserialize;
 
 #[derive(Debug)]
 struct File {
-    id: u32,
+    id: u64,
     filename: String,
     url: String,
     size: u32,
@@ -25,7 +25,7 @@ impl Display for File {
 
 #[derive(Deserialize, Debug)]
 struct FileResponse {
-    id: u32,
+    id: u64,
     filename: String,
     url: String,
     size: u32,
@@ -37,7 +37,7 @@ struct FileResponse {
 pub struct DownloadCommand {
     /// Canvas course ID
     #[clap(long, short)]
-    course: Option<u32>,
+    course: Option<u64>,
 
     /// Canvas URL to parse
     #[clap(long, short)]
@@ -45,7 +45,7 @@ pub struct DownloadCommand {
 
     /// Canvas file IDs
     #[clap(value_parser, num_args = 1.., value_delimiter = ' ')]
-    files: Option<Vec<u32>>,
+    files: Option<Vec<u64>>,
 
     /// Output directory
     #[clap(long, short)]
@@ -83,11 +83,11 @@ impl DownloadCommand {
 
             let captures = regex.captures(&canvas_assignment_url).unwrap();
             base_url = captures.get(1).unwrap().as_str().to_string();
-            course_id = Some(captures.get(2).unwrap().as_str().parse::<u32>().unwrap());
+            course_id = Some(captures.get(2).unwrap().as_str().parse::<u64>().unwrap());
         }
 
         if let Ok(env_canvas_course_id) = std::env::var("CANVAS_COURSE_ID") {
-            course_id = Some(env_canvas_course_id.parse::<u32>().unwrap())
+            course_id = Some(env_canvas_course_id.parse::<u64>().unwrap())
         }
 
         let base_url = base_url;
