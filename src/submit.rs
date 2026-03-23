@@ -11,7 +11,7 @@ use serde_derive::Deserialize;
 
 #[derive(Debug)]
 struct Assignment {
-    id: u32,
+    id: u64,
     name: String,
     due_at: Option<DateTime>,
     is_graded: bool,
@@ -25,7 +25,7 @@ impl Display for Assignment {
 
 #[derive(Deserialize, Debug)]
 struct AssignmentResponse {
-    id: u32,
+    id: u64,
     name: String,
     due_at: Option<DateTime>,
     locked_for_user: bool,
@@ -41,7 +41,7 @@ struct UploadBucket {
 
 #[derive(Deserialize, Debug)]
 struct UploadResponse {
-    id: u32,
+    id: u64,
     display_name: Option<String>,
 }
 
@@ -57,11 +57,11 @@ pub struct SubmitCommand {
 
     /// Canvas course ID
     #[clap(long, short)]
-    course: Option<u32>,
+    course: Option<u64>,
 
     /// Canvas assignment ID
     #[clap(long, short)]
-    assignment: Option<u32>,
+    assignment: Option<u64>,
 }
 
 impl SubmitCommand {
@@ -112,18 +112,18 @@ impl SubmitCommand {
 
             let captures = regex.captures(&canvas_assignment_url).unwrap();
             base_url = captures.get(1).unwrap().as_str().to_string();
-            course_id = Some(captures.get(2).unwrap().as_str().parse::<u32>().unwrap());
+            course_id = Some(captures.get(2).unwrap().as_str().parse::<u64>().unwrap());
             if let Some(a_id) = captures.get(3) {
-                assignment_id = Some(a_id.as_str().parse::<u32>().unwrap());
+                assignment_id = Some(a_id.as_str().parse::<u64>().unwrap());
             }
         }
 
         if let Ok(env_canvas_course_id) = std::env::var("CANVAS_COURSE_ID") {
-            course_id = Some(env_canvas_course_id.parse::<u32>().unwrap())
+            course_id = Some(env_canvas_course_id.parse::<u64>().unwrap())
         }
 
         if let Ok(env_canvas_assignment_id) = std::env::var("CANVAS_ASSIGNMENT_ID") {
-            assignment_id = Some(env_canvas_assignment_id.parse::<u32>().unwrap())
+            assignment_id = Some(env_canvas_assignment_id.parse::<u64>().unwrap())
         }
 
         let base_url = base_url;

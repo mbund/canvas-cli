@@ -9,7 +9,7 @@ pub type DateTime = chrono::DateTime<chrono::Utc>;
 #[derive(Debug, Hash, Clone, PartialEq, Eq)]
 pub struct Course {
     pub name: String,
-    pub id: u32,
+    pub id: u64,
     is_favorite: bool,
     css_color: Option<String>,
     created_at: DateTime,
@@ -17,7 +17,7 @@ pub struct Course {
 
 #[derive(Deserialize, Debug)]
 struct CourseResponse {
-    id: u32,
+    id: u64,
     name: String,
     is_favorite: bool,
     created_at: DateTime,
@@ -47,7 +47,7 @@ impl Display for Course {
 
 impl Course {
     pub async fn fetch(
-        course_id: Option<u32>,
+        course_id: Option<u64>,
         base_url: &str,
         client: &Client,
     ) -> Result<Course, anyhow::Error> {
@@ -63,7 +63,7 @@ impl Course {
                 .await?;
             log::info!("Made REST request to get course information");
 
-            let course_colors: HashMap<u32, String> = client
+            let course_colors: HashMap<u64, String> = client
                 .get(format!("{}/api/v1/users/self/colors", base_url))
                 .send()
                 .await?
@@ -72,7 +72,7 @@ impl Course {
                 .custom_colors
                 .into_iter()
                 .filter(|(k, _)| k.starts_with("course_"))
-                .map(|(k, v)| (k.trim_start_matches("course_").parse::<u32>().unwrap(), v))
+                .map(|(k, v)| (k.trim_start_matches("course_").parse::<u64>().unwrap(), v))
                 .collect();
             log::info!("Made REST request to get course colors");
 
@@ -102,7 +102,7 @@ impl Course {
 
             log::info!("Made REST request to get favorite courses");
 
-            let course_colors: HashMap<u32, String> = client
+            let course_colors: HashMap<u64, String> = client
                 .get(format!("{}/api/v1/users/self/colors", base_url))
                 .send()
                 .await?
@@ -111,7 +111,7 @@ impl Course {
                 .custom_colors
                 .into_iter()
                 .filter(|(k, _)| k.starts_with("course_"))
-                .map(|(k, v)| (k.trim_start_matches("course_").parse::<u32>().unwrap(), v))
+                .map(|(k, v)| (k.trim_start_matches("course_").parse::<u64>().unwrap(), v))
                 .collect();
             log::info!("Made REST request to get course colors");
 
