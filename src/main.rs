@@ -6,6 +6,7 @@ use std::env;
 pub mod auth;
 pub mod download;
 pub mod submit;
+pub mod assignments;
 
 #[derive(Serialize, Deserialize, Debug, Default)]
 pub struct Config {
@@ -15,8 +16,8 @@ pub struct Config {
 
 #[derive(Debug)]
 pub struct NonEmptyConfig {
-    url: String,
-    access_token: String,
+    pub url: String,
+    pub access_token: String,
 }
 
 impl Config {
@@ -52,7 +53,8 @@ enum Action {
     Auth(auth::AuthCommand),
     Submit(submit::SubmitCommand),
     Download(download::DownloadCommand),
-
+    /// View assignment information
+    Assignments(assignments::AssignmentsCommand),
     /// Generate shell completions
     Completions {
         /// The shell to generate the completions for
@@ -64,7 +66,6 @@ enum Action {
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     env_logger::init();
-
     let args = Args::parse();
 
     // Don't load the config if doing completions, since that accesses the home directory and breaks the nix build
@@ -87,7 +88,7 @@ async fn main() -> Result<(), anyhow::Error> {
         Action::Auth(command) => command.action(&mut cfg).await,
         Action::Submit(command) => command.action(&cfg).await,
         Action::Download(command) => command.action(&cfg).await,
-
+        Action::Assignments(command) => command.action(&cfg).await,
         Action::Completions { shell: _ } => unreachable!(),
     }
 }
